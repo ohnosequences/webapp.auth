@@ -194,10 +194,10 @@ object Auth {
   }
 }
 
+// https://www.playframework.com/documentation/2.6.x/ScalaActionsComposition#Action-composition
 case class AuthenticatedRequest[A](val user: String, request: Request[A])
     extends WrappedRequest[A](request)
 
-// https://www.playframework.com/documentation/2.6.x/ScalaActionsComposition#Action-composition
 abstract class Authenticated(val parser: BodyParsers.Default, val ws: WSClient)(
     implicit val executionContext: ExecutionContext
 ) extends ActionBuilder[AuthenticatedRequest, AnyContent] {

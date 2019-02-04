@@ -1,2 +1,20 @@
 *.class
 *.log
+# sbt specific
+dist/
+target/
+boot/
+lib_managed/
+src_managed/
+project/boot/
+project/plugins/project/
+project/project/
+project/target/
+
+# editors
+.tags*
+.sublime*
+.atom*
+.ensime*
+.idea*
+.vscode*

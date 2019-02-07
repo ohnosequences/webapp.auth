@@ -17,7 +17,7 @@ abstract class PasswordChange(val cc: ControllerComponents,
   def changePassword = authenticated.async { request =>
     val currentPassword = request.body.asFormUrlEncoded.get("current").head
     val newPassword     = request.body.asFormUrlEncoded.get("new").head
-    val reNewPassword   = request.body.asFormUrlEncoded.get("new").head
+    val reNewPassword   = request.body.asFormUrlEncoded.get("renew").head
     val id              = request.user
     val badRequest      = Future.successful { Results.BadRequest: Result }
 

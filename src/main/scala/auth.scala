@@ -28,7 +28,6 @@ abstract class Login(val cc: ControllerComponents,
   val sessionsTable: String
 
   def login = Action.async { request =>
-    //TODO: Add token generation + TLS
     val inputUser     = request.body.asFormUrlEncoded.get("email").head
     val inputPassword = request.body.asFormUrlEncoded.get("pass").head
     val sessionMaxAge =

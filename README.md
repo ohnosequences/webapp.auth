@@ -5,7 +5,7 @@ Utilities for login, logout, password change and session management in webapps b
 
 In a Scala Play project, you should add this to your dependencies:
 
-```
+```scala
 resolvers += "Era7 maven releases" at "https://s3-eu-west-1.amazonaws.com/releases.era7.com"
 libraryDependencies += "ohnosequences" %% "webapp.auth" % "x.y.z"
 ```
@@ -21,7 +21,7 @@ This package is intended to be used with [PostgreSQL](https://www.postgresql.org
 
 The database should have tables to store users and their sessions with the following minimal fields:
 
-```
+```sql
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
@@ -88,7 +88,7 @@ That class should be extended because it contains a `sessionsTable` abstract val
 
 Imagine we have code to do something once the user has identified himself/herself:
 
-```
+```scala
 import javax.inject._
 import play.api.mvc.Results._
 
@@ -109,7 +109,7 @@ class MyController @Inject (...) {
 Then to restrict those actions to authenticated requests (those which carry a valid token) we should 
 inject an instance of `Authenticated`, for example `authenticated: Authenticated` and substitute `Action` for `authenticated`:
 
-```
+```scala
 import javax.inject._
 import play.api.mvc.Results._
 
@@ -143,7 +143,7 @@ Those fields should be transmited in plain text using HTTPs.
 
 Interesting thing about this `Auth` object is that it could be used to hash passwords and introduce them, by hand, in the database:
 
-```
+```scala
 import webapp.auth.Auth
 
 Auth.password.hash("pass")
@@ -152,12 +152,12 @@ Auth.password.hash("pass")
 
 To introduce them in the database:
 
-```
+```sql
 psql
 
 INSERT INTO
        users ( email, password )
-       VALUES ( 'user@era7.com',       '\x24372443362e2e2e2e2f2e2e2e2e3774554b6631657252587931706f5469646c76757a4d74526a7949797058423972364a537a6944495061332470394c537a74316b496e454b52583333435453626d462e30664f4f2f706a64503141435636514c2f78633200');
+       VALUES ( 'user@era7.com', '\x24372443362e2e2e2e2f2e2e2e2e3774554b6631657252587931706f5469646c76757a4d74526a7949797058423972364a537a6944495061332470394c537a74316b496e454b52583333435453626d462e30664f4f2f706a64503141435636514c2f78633200');
 
 ```
 
@@ -169,7 +169,7 @@ This is an example coming from a real project.
 
 ### `app/controllers/auth.scala` file
 
-```
+```scala
 package controllers
 
 import javax.inject._
@@ -199,7 +199,7 @@ class Auth @Inject()(cc: ControllerComponents,
 
 ### `app/controllers/settings.scala` file
 
-```
+```scala
 package controllers
 
 import javax.inject._

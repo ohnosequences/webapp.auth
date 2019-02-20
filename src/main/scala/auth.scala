@@ -169,9 +169,9 @@ object Auth {
     token
   }
 
-  def checkValidToken(id: UserID, token: Token)(
-      implicit ec: ExecutionContext,
-      sessionsTable: Database.Endpoint): Future[Boolean] =
+  def checkValidToken(sessionsTable: Database.Endpoint)(
+      id: UserID,
+      token: Token): Future[Boolean] =
     sessionsTable.select
       .columns("expires")
       .singular
@@ -209,7 +209,7 @@ abstract class Authenticated(val parser: BodyParsers.Default)(
 
   val sessionsTable: Database.Endpoint
 
-  implicit val sessions = sessionsTable
+  private val checkValidToken = Auth.checkValidToken(sessionsTable) _
 
   private val unauthorized: Future[Result] = Future.successful { Unauthorized }
 
@@ -225,7 +225,7 @@ abstract class Authenticated(val parser: BodyParsers.Default)(
       session.get("token").fold(unauthorized) { token =>
         // We need to search for user and pass in the
         // database and check that they are correct
-        Auth.checkValidToken(userID, token).flatMap { valid =>
+        checkValidToken(userID, token).flatMap { valid =>
           if (valid)
             handler(AuthenticatedRequest(userID, request))
           else

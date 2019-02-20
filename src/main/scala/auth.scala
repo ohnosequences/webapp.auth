@@ -165,58 +165,47 @@ object Auth {
     token
   }
 
-  def checkValidToken(sessionsTable: String, ws: WSClient)(
-      id: UserID,
-      token: Token)(implicit ec: ExecutionContext): Future[Boolean] = {
-
-    val wsrequest = ws.url(
-      sessionsTable +
-        "?id=eq." +
-        HttpRequest.escapeParameter(id)
-    )
-
-    wsrequest.get.map { response =>
-      val sessions = response.json.as[JsArray].value
-
-      // We need to append a \x prefix to the token, since
-      // that is the way postgresql stores hex strings
-      val maybeAuthorizedSession = sessions.collectFirst {
-        case session
-            if (
-              session("id").as[Int].toString == id &&
-                session("token").as[String] == ("\\x" ++ token)
-            ) => {
-          /* Postgrest replaces " " in timestamps for a T, according to ISO-8601
-             Example: "2019-01-25 19:16:59.281" is returned as "2019-01-25T19:16:59.281"
-
-             https://github.com/PostgREST/postgrest/issues/177
-           */
-          val expiration =
-            Timestamp.valueOf(session("expires").as[String].replace("T", " "))
-          val currentTime = new Timestamp(System.currentTimeMillis)
-
-          currentTime.before(expiration)
-        }
+  def checkValidToken(id: UserID, token: Token)(
+    implicit ec: ExecutionContext,
+    sessionsTable: Database.Endpoint): Future[Boolean] =
+    sessionsTable.select
+      .columns("expires")
+      .singular
+      .where(
+        Pred.eq("id", HttpRequest.escapeParameter(id)),
+        // We need to append a \x prefix to the token, since
+        // that is the way postgresql stores hex strings
+        Pred.eq("token", "\\x" ++ token)
+      )
+      .onFailure { _ =>
+        false
       }
+      .onSuccess { response =>
+        val session = response.json.as[JsObject]
+        /* Postgrest replaces " " in timestamps for a T, according to ISO-8601
+         Example: "2019-01-25 19:16:59.281" is returned as "2019-01-25T19:16:59.281"
 
-      maybeAuthorizedSession.fold(false) { authorized =>
-        authorized
+         https://github.com/PostgREST/postgrest/issues/177
+         */
+        val expiration =
+          Timestamp.valueOf(session("expires").as[String].replace("T", " "))
+        val currentTime = new Timestamp(System.currentTimeMillis)
+
+        currentTime.before(expiration)
       }
-    }
-  }
 }
 
 // https://www.playframework.com/documentation/2.6.x/ScalaActionsComposition#Action-composition
 case class AuthenticatedRequest[A](val user: String, request: Request[A])
     extends WrappedRequest[A](request)
 
-abstract class Authenticated(val parser: BodyParsers.Default, val ws: WSClient)(
+abstract class Authenticated(val parser: BodyParsers.Default)(
     implicit val executionContext: ExecutionContext
 ) extends ActionBuilder[AuthenticatedRequest, AnyContent] {
 
-  val sessionsTable: String
+  val sessionsTable: Database.Endpoint
 
-  private val checkValidToken = Auth.checkValidToken(sessionsTable, ws) _
+  implicit val sessions = sessionsTable
 
   private val unauthorized: Future[Result] = Future.successful { Unauthorized }
 
@@ -232,7 +221,7 @@ abstract class Authenticated(val parser: BodyParsers.Default, val ws: WSClient)(
       session.get("token").fold(unauthorized) { token =>
         // We need to search for user and pass in the
         // database and check that they are correct
-        checkValidToken(userID, token).flatMap { valid =>
+        Auth.checkValidToken(userID, token).flatMap { valid =>
           if (valid)
             handler(AuthenticatedRequest(userID, request))
           else

@@ -4,6 +4,7 @@ import play.api.mvc._
 import play.api.mvc.Results._
 import play.api.libs.ws._
 import play.api.libs.json._
+import webapp.db.postgrest.Database, Database.{Predicate => Pred}
 import scala.concurrent.{ExecutionContext, Future}
 import org.abstractj.kalium
 import kalium.NaCl.Sodium
@@ -23,95 +24,107 @@ abstract class Login(val cc: ControllerComponents,
     implicit val ec: ExecutionContext
 ) extends AbstractController(cc) {
 
-  val usersTable: String
+  val usersTable: Database.Endpoint
 
-  val sessionsTable: String
+  val sessionsTable: Database.Endpoint
+
+  val sessionMaxAge: Long
 
   def login = Action.async { request =>
-    val inputUser     = request.body.asFormUrlEncoded.get("email").head
-    val inputPassword = request.body.asFormUrlEncoded.get("pass").head
-    val sessionMaxAge =
-      play.Play.application.configuration
-        .getLong("play.http.session.maxAge")
+    val form = request.body.asFormUrlEncoded
+    val absentParams = Future.successful {
+      BadRequest("Form parameters cannot be absent")
+    }
 
-    // Query for the database
-    val wsrequest: WSRequest =
-      ws.url(
-        usersTable +
-          "?email=eq." + HttpRequest.escapeParameter(inputUser)
-      )
+    form.fold(absentParams) { form =>
+      form.get("email").fold(absentParams) { email =>
+        form.get("pass").fold(absentParams) { pass =>
+          val inputUser     = HttpRequest.escapeParameter(email.head)
+          val inputPassword = HttpRequest.escapeParameter(pass.head)
 
-    wsrequest.get.flatMap { response =>
-      val usersArray = response.json.as[JsArray].value
+          if (inputUser.isEmpty || inputPassword.isEmpty) {
+            absentParams
+          } else {
 
-      // Get users that match the input password
-      val maybeAuthorizedUser = usersArray.collectFirst {
-        /*
-         Convert the field password to an String and
-         check whether it matches the encryption of
-         the password from the database
-         */
-        case user
-            if (
-              user("password").asOpt[String].fold(false) { hashed =>
-                Auth.password.verify(hashed.stripPrefix("\\x"), inputPassword)
+            usersTable.select
+              .columns("id", "password")
+              .singular
+              .where(
+                Pred.eq("email", inputUser)
+              )
+              .onFailure { _ =>
+                Unauthorized("Incorrect user or password")
               }
-            ) =>
-          user.as[JsObject]
-      }
+              .onSuccess { response =>
+                val user = response.json.as[JsObject]
+                /*
+                 Convert the field password to an String and
+                 check whether it matches the encryption of
+                 the password from the database
+                 */
+                val hashedPass = user("password").as[String]
+                val authorized =
+                  Auth.password.verify(hashedPass.stripPrefix("\\x"),
+                                       inputPassword)
 
-      // If user credentials are correct, generate session
-      // token tied to its id, post it to the database, and
-      // return 200 with a session cookie, else return unauthorized (401)
-      maybeAuthorizedUser.fold(
-        Future.successful { Results.Unauthorized: Result }
-      ) { result =>
-        val userID       = result("id").as[Int].toString
-        val sessionToken = Auth.createToken
-        val expiration   = new Timestamp(System.currentTimeMillis)
-        expiration.setTime(expiration.getTime + sessionMaxAge)
+                // If user credentials are correct, generate session
+                // token tied to its id, post it to the database, and
+                // return 200 with a session cookie, else return unauthorized (401)
+                if (authorized) {
+                  val userID       = user("id").as[Int].toString
+                  val sessionToken = Auth.createToken
+                  val expiration   = new Timestamp(System.currentTimeMillis)
+                  expiration.setTime(expiration.getTime + sessionMaxAge)
 
-        val session: JsValue = Json.obj(
-          "id"      -> userID,
-          "token"   -> s"\\x${sessionToken}",
-          "expires" -> expiration.toString
-        )
-
-        // TODO. Should this be checked for failures? if successes,
-        // it returns a 201
-        ws.url(sessionsTable).post(session).map { response =>
-          Results.Ok
-            .withSession(
-              "id"    -> userID,
-              "token" -> sessionToken
-            )
+                  sessionsTable
+                    .insert(
+                      "id"      -> userID,
+                      "token"   -> s"\\x${sessionToken}",
+                      "expires" -> expiration.toString
+                    )
+                    .onFailure { _ =>
+                      Unauthorized(
+                        "An error occurred while creating a valid session")
+                    }
+                    .failIfAlreadyExists
+                    .onSuccess { _ =>
+                      Ok.withSession(
+                        "id"    -> userID,
+                        "token" -> sessionToken
+                      )
+                    }
+                } else {
+                  Future.successful { Unauthorized: Result }
+                }
+              }
+          }
         }
       }
     }
   }
 
   def logout = authenticated.async { request =>
-    val session = request.session
-    val closeSession: Future[Result] = Future.successful {
-      Results.Ok.withNewSession
-    }
+    val session      = request.session
+    val closeSession = Future.successful { Ok.withNewSession }
 
-    session.get("id").fold(closeSession) { id =>
-      session.get("token").fold(closeSession) { token =>
-        val wsrequest: WSRequest = ws.url(
-          sessionsTable + "?" +
-            "id=eq." + id +
-            "&" +
-            "token=eq." + s"\\x${token}'"
-        )
-
-        val session: JsValue = Json.obj(
-          "valid" -> false
-        )
-
-        wsrequest.patch(session).flatMap { _ =>
-          closeSession
-        }
+    session.get("id").fold(closeSession) { id: String =>
+      session.get("token").fold(closeSession) { token: String =>
+        sessionsTable
+          .update(
+            "valid" -> false
+          )
+          .where(
+            Pred.eq("id", id),
+            Pred.eq("token", s"\\x${token}")
+          )
+          // We want to clear the cookie from the user's session no matter
+          // if setting the session as invalid fails or not
+          .onFailure { _ =>
+            closeSession
+          }
+          .onSuccess { _ =>
+            closeSession
+          }
       }
     }
   }

@@ -8,8 +8,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import webapp.db.postgrest.Database, Database.{Predicate => Pred}
 
 abstract class PasswordChange(val cc: ControllerComponents,
-                              val authenticated: Authenticated,
-                              val ws: WSClient)(
+                              val authenticated: Authenticated)(
     implicit val ec: ExecutionContext
 ) extends AbstractController(cc) {
 
@@ -23,17 +22,11 @@ abstract class PasswordChange(val cc: ControllerComponents,
 
     form.fold(absentParams) { form =>
       form.get("current").fold(absentParams) {
-        _.headOption.fold(absentParams) { _currentPassword =>
-          val currentPassword = HttpRequest.escapeParameter(_currentPassword)
-
+        _.headOption.fold(absentParams) { currentPassword =>
           form.get("new").fold(absentParams) {
-            _.headOption.fold(absentParams) { _newPassword =>
-              val newPassword = HttpRequest.escapeParameter(_newPassword)
-
+            _.headOption.fold(absentParams) { newPassword =>
               form.get("renew").fold(absentParams) {
-                _.headOption.fold(absentParams) { _reNewPassword =>
-                  val reNewPassword =
-                    HttpRequest.escapeParameter(_reNewPassword)
+                _.headOption.fold(absentParams) { reNewPassword =>
                   val id = request.user
 
                   // New password cannot be equal to old password

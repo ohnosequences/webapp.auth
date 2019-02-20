@@ -23,11 +23,17 @@ abstract class PasswordChange(val cc: ControllerComponents,
 
     form.fold(absentParams) { form =>
       form.get("current").fold(absentParams) {
-        _.headOption.fold(absentParams) { currentPassword =>
+        _.headOption.fold(absentParams) { _currentPassword =>
+          val currentPassword = HttpRequest.escapeParameter(_currentPassword)
+
           form.get("new").fold(absentParams) {
-            _.headOption.fold(absentParams) { newPassword =>
+            _.headOption.fold(absentParams) { _newPassword =>
+              val newPassword = HttpRequest.escapeParameter(_newPassword)
+
               form.get("renew").fold(absentParams) {
-                _.headOption.fold(absentParams) { reNewPassword =>
+                _.headOption.fold(absentParams) { _reNewPassword =>
+                  val reNewPassword =
+                    HttpRequest.escapeParameter(_reNewPassword)
                   val id = request.user
 
                   // New password cannot be equal to old password

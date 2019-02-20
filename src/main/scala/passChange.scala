@@ -5,6 +5,7 @@ import play.api.mvc.Results._
 import play.api.libs.ws._
 import play.api.libs.json._
 import scala.concurrent.{ExecutionContext, Future}
+import webapp.db.postgrest.Database, Database.{Predicate => Pred}
 
 abstract class PasswordChange(val cc: ControllerComponents,
                               val authenticated: Authenticated,
@@ -12,54 +13,73 @@ abstract class PasswordChange(val cc: ControllerComponents,
     implicit val ec: ExecutionContext
 ) extends AbstractController(cc) {
 
-  val usersTable: String
+  val usersTable: Database.Endpoint
 
   def changePassword = authenticated.async { request =>
-    val currentPassword = request.body.asFormUrlEncoded.get("current").head
-    val newPassword     = request.body.asFormUrlEncoded.get("new").head
-    val reNewPassword   = request.body.asFormUrlEncoded.get("renew").head
-    val id              = request.user
-    val badRequest      = Future.successful { Results.BadRequest: Result }
+    val form = request.body.asFormUrlEncoded
+    val absentParams = Future.successful {
+      BadRequest("Form parameters cannot be absent")
+    }
 
-    if (newPassword != currentPassword) {
-      if (newPassword == reNewPassword && !newPassword.isEmpty) {
-        val wsrequest = ws.url(
-          usersTable +
-            "?id=eq." + id
-        )
+    form.fold(absentParams) { form =>
+      form.get("current").fold(absentParams) {
+        _.headOption.fold(absentParams) { currentPassword =>
+          form.get("new").fold(absentParams) {
+            _.headOption.fold(absentParams) { newPassword =>
+              form.get("renew").fold(absentParams) {
+                _.headOption.fold(absentParams) { reNewPassword =>
+                  val id = request.user
 
-        wsrequest.get.flatMap { response =>
-          val usersArray = response.json.as[JsArray].value
-
-          // Get users that match the input password
-          val maybeCorrectPass = usersArray.collectFirst {
-            /*
-             Convert the field password to an String and
-             check whether it matches the encryption of
-             the password from the database
-             */
-            case user if (user("password").asOpt[String].fold(false) { hashed =>
-                  Auth.password.verify(hashed.stripPrefix("\\x"),
-                                       currentPassword)
-                }) =>
-              user
-          }
-
-          maybeCorrectPass.fold(badRequest) { _ =>
-            val passInfo: JsValue = Json.obj(
-              "password" -> ("\\x" ++ Auth.password.hash(newPassword))
-            )
-
-            wsrequest.patch(passInfo).map { _ =>
-              Results.Ok: Result
+                  // New password cannot be equal to old password
+                  // New password cannot be empty
+                  if (newPassword != currentPassword) {
+                    if (newPassword == reNewPassword) {
+                      if (!newPassword.isEmpty) {
+                        usersTable
+                          .update(
+                            "password" -> ("\\x" ++ Auth.password.hash(
+                              newPassword))
+                          )
+                          .where(
+                            Pred.eq("id", id),
+                            Pred.eq(
+                              "password",
+                              "\\x" ++ Auth.password.hash(currentPassword))
+                          )
+                          .onFailure { _ =>
+                            BadRequest(
+                              "An error occurred. " ++
+                                "Check that your current password is not correct"
+                            )
+                          }
+                          .onSuccess { _ =>
+                            Ok
+                          }
+                      } else {
+                        Future.successful {
+                          BadRequest("The new password cannot be empty")
+                        }
+                      }
+                    } else {
+                      Future.successful {
+                        BadRequest(
+                          "You have to repeat your new password correctly!"
+                        )
+                      }
+                    }
+                  } else {
+                    Future.successful {
+                      BadRequest(
+                        "Your new password cannot be equal to the old one"
+                      )
+                    }
+                  }
+                }
+              }
             }
           }
         }
-      } else {
-        badRequest
       }
-    } else {
-      badRequest
     }
   }
 }

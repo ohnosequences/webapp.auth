@@ -37,66 +37,70 @@ abstract class Login(val cc: ControllerComponents,
     }
 
     form.fold(absentParams) { form =>
-      form.get("email").fold(absentParams) { email =>
-        form.get("pass").fold(absentParams) { pass =>
-          val inputUser     = HttpRequest.escapeParameter(email.head)
-          val inputPassword = HttpRequest.escapeParameter(pass.head)
+      form.get("email").fold(absentParams) {
+        _.headOption.fold(absentParams) { email =>
+          form.get("pass").fold(absentParams) {
+            _.headOption.fold(absentParams) { pass =>
+              val inputUser     = HttpRequest.escapeParameter(email)
+              val inputPassword = HttpRequest.escapeParameter(pass)
 
-          if (inputUser.isEmpty || inputPassword.isEmpty) {
-            absentParams
-          } else {
+              if (inputUser.isEmpty || inputPassword.isEmpty) {
+                absentParams
+              } else {
 
-            usersTable.select
-              .columns("id", "password")
-              .singular
-              .where(
-                Pred.eq("email", inputUser)
-              )
-              .onFailure { _ =>
-                Unauthorized("Incorrect user or password")
-              }
-              .onSuccess { response =>
-                val user = response.json.as[JsObject]
-                /*
-                 Convert the field password to an String and
-                 check whether it matches the encryption of
-                 the password from the database
-                 */
-                val hashedPass = user("password").as[String]
-                val authorized =
-                  Auth.password.verify(hashedPass.stripPrefix("\\x"),
-                                       inputPassword)
+                usersTable.select
+                  .columns("id", "password")
+                  .singular
+                  .where(
+                    Pred.eq("email", inputUser)
+                  )
+                  .onFailure { _ =>
+                    Unauthorized("Incorrect user or password")
+                  }
+                  .onSuccess { response =>
+                    val user = response.json.as[JsObject]
+                    /*
+                     Convert the field password to an String and
+                     check whether it matches the encryption of
+                     the password from the database
+                     */
+                    val hashedPass = user("password").as[String]
+                    val authorized =
+                      Auth.password.verify(hashedPass.stripPrefix("\\x"),
+                                           inputPassword)
 
-                // If user credentials are correct, generate session
-                // token tied to its id, post it to the database, and
-                // return 200 with a session cookie, else return unauthorized (401)
-                if (authorized) {
-                  val userID       = user("id").as[Int].toString
-                  val sessionToken = Auth.createToken
-                  val expiration   = new Timestamp(System.currentTimeMillis)
-                  expiration.setTime(expiration.getTime + sessionMaxAge)
+                    // If user credentials are correct, generate session
+                    // token tied to its id, post it to the database, and
+                    // return 200 with a session cookie, else return unauthorized (401)
+                    if (authorized) {
+                      val userID       = user("id").as[Int].toString
+                      val sessionToken = Auth.createToken
+                      val expiration   = new Timestamp(System.currentTimeMillis)
+                      expiration.setTime(expiration.getTime + sessionMaxAge)
 
-                  sessionsTable
-                    .insert(
-                      "id"      -> userID,
-                      "token"   -> s"\\x${sessionToken}",
-                      "expires" -> expiration.toString
-                    )
-                    .onFailure { _ =>
-                      Unauthorized(
-                        "An error occurred while creating a valid session")
+                      sessionsTable
+                        .insert(
+                          "id"      -> userID,
+                          "token"   -> s"\\x${sessionToken}",
+                          "expires" -> expiration.toString
+                        )
+                        .onFailure { _ =>
+                          Unauthorized(
+                            "An error occurred while creating a valid session")
+                        }
+                        .failIfAlreadyExists
+                        .onSuccess { _ =>
+                          Ok.withSession(
+                            "id"    -> userID,
+                            "token" -> sessionToken
+                          )
+                        }
+                    } else {
+                      Future.successful { Unauthorized: Result }
                     }
-                    .failIfAlreadyExists
-                    .onSuccess { _ =>
-                      Ok.withSession(
-                        "id"    -> userID,
-                        "token" -> sessionToken
-                      )
-                    }
-                } else {
-                  Future.successful { Unauthorized: Result }
-                }
+                  }
               }
+            }
           }
         }
       }
@@ -166,8 +170,8 @@ object Auth {
   }
 
   def checkValidToken(id: UserID, token: Token)(
-    implicit ec: ExecutionContext,
-    sessionsTable: Database.Endpoint): Future[Boolean] =
+      implicit ec: ExecutionContext,
+      sessionsTable: Database.Endpoint): Future[Boolean] =
     sessionsTable.select
       .columns("expires")
       .singular

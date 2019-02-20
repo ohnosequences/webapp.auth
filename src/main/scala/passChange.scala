@@ -34,25 +34,49 @@ abstract class PasswordChange(val cc: ControllerComponents,
                   if (newPassword != currentPassword) {
                     if (newPassword == reNewPassword) {
                       if (!newPassword.isEmpty) {
-                        usersTable
-                          .update(
-                            "password" -> ("\\x" ++ Auth.password.hash(
-                              newPassword))
-                          )
+                        usersTable.select.singular
+                          .columns("password")
                           .where(
-                            Pred.eq("id", id),
-                            Pred.eq(
-                              "password",
-                              "\\x" ++ Auth.password.hash(currentPassword))
+                            Pred.eq("id", id)
                           )
                           .onFailure { _ =>
-                            BadRequest(
-                              "An error occurred. " ++
-                                "Check that your current password is not correct"
+                            InternalServerError(
+                              "An error ocurred while updating the password"
                             )
                           }
-                          .onSuccess { _ =>
-                            Ok
+                          .onSuccess { response =>
+                            val user = response.json.as[JsObject]
+                            val hashed =
+                              user("password").as[String].stripPrefix("\\x")
+
+                            val authorized =
+                              Auth.password.verify(hashed, currentPassword)
+
+                            if (authorized) {
+                              usersTable
+                                .update(
+                                  "password" -> ("\\x" ++ Auth.password.hash(
+                                    newPassword))
+                                )
+                                .where(
+                                  Pred.eq("id", id)
+                                )
+                                .onFailure { _ =>
+                                  InternalServerError(
+                                    "An error ocurred while updating the password"
+                                  )
+                                }
+                                .onSuccess { _ =>
+                                  Ok
+                                }
+                            } else {
+                              Future.successful {
+                                BadRequest(
+                                  "An error occurred. " ++
+                                    "Check that your current password is not correct"
+                                )
+                              }
+                            }
                           }
                       } else {
                         Future.successful {

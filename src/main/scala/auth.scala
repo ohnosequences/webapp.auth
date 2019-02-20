@@ -174,7 +174,6 @@ object Auth {
       token: Token): Future[Boolean] =
     sessionsTable.select
       .columns("expires")
-      .singular
       .where(
         Pred.eq("id", HttpRequest.escapeParameter(id)),
         // We need to append a \x prefix to the token, since
@@ -185,17 +184,26 @@ object Auth {
         false
       }
       .onSuccess { response =>
-        val session = response.json.as[JsObject]
-        /* Postgrest replaces " " in timestamps for a T, according to ISO-8601
-         Example: "2019-01-25 19:16:59.281" is returned as "2019-01-25T19:16:59.281"
+        val sessions = response.json.as[JsArray].value
 
-         https://github.com/PostgREST/postgrest/issues/177
-         */
-        val expiration =
-          Timestamp.valueOf(session("expires").as[String].replace("T", " "))
-        val currentTime = new Timestamp(System.currentTimeMillis)
+        // We need to append a \x prefix to the token, since
+        // that is the way postgresql stores hex strings
+        val maybeAuthorizedSession = sessions.collectFirst {
+          case session: JsObject =>
+            /* Postgrest replaces " " in timestamps for a T, according to ISO-8601
+           Example: "2019-01-25 19:16:59.281" is returned as "2019-01-25T19:16:59.281"
+           https://github.com/PostgREST/postgrest/issues/177
+             */
+            val expiration =
+              Timestamp.valueOf(session("expires").as[String].replace("T", " "))
+            val currentTime = new Timestamp(System.currentTimeMillis)
 
-        currentTime.before(expiration)
+            currentTime.before(expiration)
+        }
+
+        maybeAuthorizedSession.fold(false) { authorized =>
+          authorized
+        }
       }
 }
 

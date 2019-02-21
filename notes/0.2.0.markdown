@@ -1,0 +1,7 @@
+# 0.2.0
+
+Second release:
+* Deletes manual queries and leaves them to an underlying newly created dependency: [`webapp.db.postgrest`](https://github.com/ohnosequences/webapp.db.postgREST).
+* Minimal refactoring of the code to produce more verbose errors.
+
+The README for this version is [here](https://github.com/ohnosequences/webapp.auth/blob/77a9ee6fe6/README.md).

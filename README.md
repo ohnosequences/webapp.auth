@@ -1,4 +1,4 @@
-# webapp-auth
+# webapp.auth
 Utilities for login, logout, password change and session management in webapps backends in Scala Play.
 
 ## Installation

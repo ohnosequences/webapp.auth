@@ -10,7 +10,7 @@ resolvers += "Era7 maven releases" at "https://s3-eu-west-1.amazonaws.com/releas
 libraryDependencies += "ohnosequences" %% "webapp.auth" % "x.y.z"
 ```
 
-where `x.y.z` is the version of the [latest release](https://github.com/ohnosequences/webapp-auth/releases/latest)
+where `x.y.z` is the version of the [latest release](https://github.com/ohnosequences/webapp.auth/releases/latest)
 
 
 ## Use
@@ -167,6 +167,39 @@ Note the initial `\x` marker when introducing it in the database, because this d
 
 This is an example coming from a real project.
 
+### `app/controllers/db.scala` file
+```scala
+package controllers
+
+import javax.inject._
+import play.api.libs.ws.{WSClient}
+import scala.concurrent.{ExecutionContext}
+import play.api.Configuration
+import webapp.db.postgrest.Database
+
+class Database @Inject()(val ws: WSClient, val configuration: Configuration)(
+    implicit val ec: ExecutionContext,
+    implicit val materializer: akka.stream.Materializer) {
+
+  private val host = configuration.get[String]("db.url")
+
+  implicit val token = configuration.get[String]("db.token")
+
+  implicit val wsClient = ws
+
+  val users                = Database.Endpoint(host + "/users")
+  val sessions             = Database.Endpoint(host + "/sessions")
+  val projects             = Database.Endpoint(host + "/projects")
+  val datasets             = Database.Endpoint(host + "/datasets")
+  val files                = Database.Endpoint(host + "/files")
+  val datasetFiles         = Database.Endpoint(host + "/files_in_dataset")
+  val projectDatasets      = Database.Endpoint(host + "/datasets_in_project")
+  val projectAnalyses      = Database.Endpoint(host + "/project_analyses")
+  val datasetAnalyses      = Database.Endpoint(host + "/dataset_analyses")
+  val projectAnalysisOwner = Database.Endpoint(host + "/project_analysis_owner")
+}
+```
+
 ### `app/controllers/auth.scala` file
 
 ```scala
@@ -174,26 +207,28 @@ package controllers
 
 import javax.inject._
 import play.api.mvc.{BodyParsers, ControllerComponents}
-import play.api.libs.ws.WSClient
+import play.api.Configuration
 import scala.concurrent.ExecutionContext
 
-class Authenticated @Inject()(parser: BodyParsers.Default, ws: WSClient)(
-    implicit override val executionContext: ExecutionContext
-) extends webapp.auth.Authenticated(parser, ws) {
-
-  val sessionsTable = "https://localhost:3000/sessions"
-}
-
-@Singleton
 class Auth @Inject()(cc: ControllerComponents,
                      authenticated: Authenticated,
-                     ws: WSClient)(
+                     db: Database,
+                     configuration: Configuration)(
     implicit override val ec: ExecutionContext
 ) extends webapp.auth.Login(cc, authenticated, ws) {
 
-  val usersTable = "https://localhost:3000/users"
+  val usersTable = db.users
 
-  val sessionsTable = "https://localhost:3000/sessions"
+  val sessionsTable = db.sessions
+
+  val sessionMaxAge = configuration.get[Long]("play.http.session.maxAge")
+}
+
+class Authenticated @Inject()(parser: BodyParsers.Default, db: Database)(
+      implicit executionContext: ExecutionContext
+  ) extends webapp.auth.Authenticated(parser) {
+
+    val sessionsTable = db.sessions
 }
 ```
 
@@ -203,19 +238,17 @@ class Auth @Inject()(cc: ControllerComponents,
 package controllers
 
 import javax.inject._
-import play.api.mvc.ControllerComponents
-import play.api.libs.ws.WSClient
+import play.api.mvc._
 import scala.concurrent.{ExecutionContext, Future}
 
-@Singleton
-class Settings @Inject()(cc: ControllerComponents,
-                         authenticated: Authenticated,
-                         ws: WSClient)(
-    implicit override val ec: ExecutionContext
-) extends webapp.auth.PasswordChange(cc, authenticated, ws) {
+class Settings @Inject()(
+    cc: ControllerComponents,
+    authenticated: Authenticated,
+    val db: Database
+)(implicit ec: ExecutionContext)
+    extends webapp.auth.PasswordChange(cc, authenticated) {
 
-  val usersTable = Routes.db.users
-
+  val usersTable = db.users
 }
 ```
 

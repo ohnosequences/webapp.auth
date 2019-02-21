@@ -10,13 +10,6 @@ import org.abstractj.kalium
 import kalium.NaCl.Sodium
 import kalium.encoders.Encoder.HEX
 import java.sql.Timestamp
-import java.net.URLEncoder
-
-object HttpRequest {
-
-  @inline def escapeParameter(parameter: String): String =
-    URLEncoder.encode(parameter, "UTF-8")
-}
 
 abstract class Login(val cc: ControllerComponents,
                      val authenticated: Authenticated,
@@ -38,12 +31,9 @@ abstract class Login(val cc: ControllerComponents,
 
     form.fold(absentParams) { form =>
       form.get("email").fold(absentParams) {
-        _.headOption.fold(absentParams) { email =>
+        _.headOption.fold(absentParams) { inputUser =>
           form.get("pass").fold(absentParams) {
-            _.headOption.fold(absentParams) { pass =>
-              val inputUser     = HttpRequest.escapeParameter(email)
-              val inputPassword = HttpRequest.escapeParameter(pass)
-
+            _.headOption.fold(absentParams) { inputPassword =>
               if (inputUser.isEmpty || inputPassword.isEmpty) {
                 absentParams
               } else {
@@ -175,7 +165,7 @@ object Auth {
     sessionsTable.select
       .columns("expires")
       .where(
-        Pred.eq("id", HttpRequest.escapeParameter(id)),
+        Pred.eq("id", id),
         // We need to append a \x prefix to the token, since
         // that is the way postgresql stores hex strings
         Pred.eq("token", "\\x" ++ token)

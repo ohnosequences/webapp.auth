@@ -73,7 +73,7 @@ abstract class PasswordChange(val cc: ControllerComponents,
                               Future.successful {
                                 BadRequest(
                                   "An error occurred. " ++
-                                    "Check that your current password is not correct"
+                                    "Check your current password is correct"
                                 )
                               }
                             }

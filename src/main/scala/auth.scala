@@ -23,6 +23,8 @@ abstract class Login(val cc: ControllerComponents,
 
   val sessionMaxAge: Long
 
+  val unauthorized: Result = Unauthorized("Incorrect user or password")
+
   def login = Action.async { request =>
     val form = request.body.asFormUrlEncoded
     val absentParams = Future.successful {
@@ -45,7 +47,7 @@ abstract class Login(val cc: ControllerComponents,
                     Pred.eq("email", inputUser)
                   )
                   .onFailure { _ =>
-                    Unauthorized("Incorrect user or password")
+                    unauthorized
                   }
                   .onSuccess { response =>
                     val user = response.json.as[JsObject]
@@ -80,13 +82,13 @@ abstract class Login(val cc: ControllerComponents,
                         }
                         .failIfAlreadyExists
                         .onSuccess { _ =>
-                          Ok.withSession(
+                          Ok("You logged in successfully!").withSession(
                             "id"    -> userID,
                             "token" -> sessionToken
                           )
                         }
                     } else {
-                      Future.successful { Unauthorized: Result }
+                      Future.successful { unauthorized }
                     }
                   }
               }
@@ -98,8 +100,10 @@ abstract class Login(val cc: ControllerComponents,
   }
 
   def logout = authenticated.async { request =>
-    val session      = request.session
-    val closeSession = Future.successful { Ok.withNewSession }
+    val session = request.session
+    val closeSession = Future.successful {
+      Ok("You logged out successfully!").withNewSession
+    }
 
     session.get("id").fold(closeSession) { id: String =>
       session.get("token").fold(closeSession) { token: String =>
@@ -209,7 +213,9 @@ abstract class Authenticated(val parser: BodyParsers.Default)(
 
   private val checkValidToken = Auth.checkValidToken(sessionsTable) _
 
-  private val unauthorized: Future[Result] = Future.successful { Unauthorized }
+  private val unauthorized: Future[Result] = Future.successful {
+    Unauthorized("Not valid credentials")
+  }
 
   def invokeBlock[A](
       request: Request[A],

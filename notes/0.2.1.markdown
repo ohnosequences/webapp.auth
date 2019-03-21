@@ -1,0 +1,4 @@
+# 0.2.1
+
+This release solves problems with XML parsings in firefox requests (solution was to return not empty 
+messages, e.g. Ok("Successful!") instead of just Ok)

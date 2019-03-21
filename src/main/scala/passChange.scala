@@ -67,7 +67,7 @@ abstract class PasswordChange(val cc: ControllerComponents,
                                   )
                                 }
                                 .onSuccess { _ =>
-                                  Ok
+                                  Ok("Password successfully changed!")
                                 }
                             } else {
                               Future.successful {

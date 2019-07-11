@@ -6,6 +6,6 @@ val testDependencies = Seq(
 
 libraryDependencies ++= Seq(
   "com.typesafe.play"    %% "play-ws"             % playVersion,
-  "ohnosequences"        %% "webapp-db-postgrest" % "0.1.1",
+  "ohnosequences"        %% "webapp-db-postgrest" % "0.1.2",
   "org.abstractj.kalium" % "kalium"               % "0.8.0"
 ) ++ testDependencies
